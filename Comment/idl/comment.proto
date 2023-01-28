@@ -1,6 +1,12 @@
 syntax = "proto3";
 
 package mini_tiktok.proto.comment;
+option go_package = "pb/comment";
+
+service CommentAction {
+    rpc CommentAction(CommentActionRequest) returns (CommentActionResponse) {}
+    rpc CommentList(CommentListRequest) returns (CommentListResponse) {}
+}
 
 message Comment {
     // 视频评论id
