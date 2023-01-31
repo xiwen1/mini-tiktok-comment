@@ -4,8 +4,11 @@ import (
 	"database/sql"
 	_ "github.com/lib/pq"
 	_ "github.com/mbobakov/grpc-consul-resolver"
+	"github.com/xiwen1/mini-tiktok-comment/Comment/idl/auth"
 	"github.com/xiwen1/mini-tiktok-comment/Comment/idl/comment"
+	"github.com/xiwen1/mini-tiktok-comment/Comment/idl/user"
 	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 	"log"
 	"time"
 )
@@ -16,8 +19,12 @@ type CommentActionServer struct {
 
 var (
 	//connStr = "postgres:RpB27iLmDV4z7ZU5tpkn0UPLQWTQx1zFGaUJixDZQhPght7WWLzfZ8PLhZjavGUZ@srv.paracraft.club:31294/nicognaw?sslmode=disable"
-	connStr = "postgres://root:zkw030813@127.0.0.1:5432/root?sslmode=disable"
-	pool    *sql.DB
+	connStr    = "postgres://root:zkw030813@127.0.0.1:5432/root?sslmode=disable"
+	pool       *sql.DB
+	consul     = "consul://"
+	conn       *grpc.ClientConn
+	clientAuth auth.AuthServiceClient
+	clientUser user.UserServiceClient
 )
 
 func InitComment(node int64) error {
@@ -29,6 +36,12 @@ func InitComment(node int64) error {
 	if err != nil {
 		log.Fatal("unable to use data source name", err)
 		return nil
+	}
+	conn, err = grpc.Dial(consul, grpc.EmptyDialOption{})
+	clientAuth = auth.NewAuthServiceClient(conn)
+	clientUser = user.NewUserServiceClient(conn)
+	if err != nil {
+		log.Fatal(err.Error())
 	}
 	return nil
 }
@@ -42,18 +55,35 @@ func CloseComment(ctx context.Context) error {
 		return err
 	}
 	pool = nil
+	err = conn.Close()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
 func (CommentActionServer) CommentAction(ctx context.Context, request *comment.CommentActionRequest) (response *comment.CommentActionResponse, err error) {
-	//token := request.Token
-
-	// todo 检查token
+	token := request.Token
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	authResp, err := clientAuth.Auth(ctx, &auth.AuthRequest{Token: token})
+	// todo 检查状态码
+	userId := authResp.UserId
 	actionType := request.ActionType
+
+	userResp, err := clientUser.GetInfo(ctx, &user.UserInfoRequest{UserId: userId, Token: token})
+	// todo 检查状态码
+	u := comment.User{
+		Id:            userId,
+		FollowCount:   userResp.FollowCount,
+		FollowerCount: userResp.FollowerCount,
+		Name:          userResp.Username,
+		IsFollow:      userResp.IsFollow,
+	}
 
 	if actionType == comment.CommentActionRequest_PUBLISH {
 		c := Comment{}
-		// todo 查询user信息
+		c.user = userId
 		c.video_id = request.VideoId
 		c.content = request.CommentText
 		c.createDate = time.Now().Format("01-02")
@@ -63,7 +93,7 @@ func (CommentActionServer) CommentAction(ctx context.Context, request *comment.C
 			response.StatusMsg = "unable to insert into database"
 			log.Fatal(err.Error())
 		}
-		cc := comment.Comment{}
+		cc := comment.Comment{Id: c.ID, Content: c.content, CreateDate: c.createDate, User: &u}
 		response.Comment = &cc
 		response.StatusMsg = "success"
 		response.StatusCode = comment.CommentActionResponse_SUCCESS
@@ -80,20 +110,23 @@ func (CommentActionServer) CommentAction(ctx context.Context, request *comment.C
 	return
 }
 
-func (CommentActionServer) CommentList(ctx context.Context, request *comment.CommentListRequest) (response *comment.CommentActionResponse, err error) {
+func (CommentActionServer) CommentList(ctx context.Context, request *comment.CommentListRequest) (response *comment.CommentListResponse, err error) {
+	token := request.Token
+	authResp, err := clientAuth.Auth(ctx, &auth.AuthRequest{Token: token})
+	if authResp.StatusCode != auth.AuthResponse_SUCCESS {
+		response.StatusCode = comment.CommentListResponse_FAIL
+		return
+	}
+	video_id := request.VideoId
+	c, err := searchComment(uint32(video_id), token)
+	if err != nil {
+		response.StatusCode = comment.CommentListResponse_FAIL
+		log.Fatal(err.Error())
+		return
+	}
+	response.StatusMsg = "success"
+	response.StatusCode = comment.CommentListResponse_SUCCESS
+	response.CommentList = c
+	// todo 查询结果到comment结构体的map映射
 	return
 }
-
-//func main() {
-//	var err error
-//	pool, err = sql.Open("postgres", connStr)
-//	if err != nil {
-//		log.Fatal(err.Error())
-//	}
-//	ctx := context.Background()
-//	err = pool.PingContext(ctx)
-//	if err != nil {
-//		log.Fatal(err.Error())
-//	}
-//	println("connected")
-//}

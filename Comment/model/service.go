@@ -1,20 +1,23 @@
 package comment
 
 import (
+	"context"
 	"database/sql"
+	"github.com/xiwen1/mini-tiktok-comment/Comment/idl/comment"
+	"github.com/xiwen1/mini-tiktok-comment/Comment/idl/user"
 	"log"
 )
 
 type Comment struct {
 	ID         int64
-	user       int64
+	user       uint32
 	content    string
 	createDate string // 格式为 mm-dd
 	video_id   int64
 }
 
 type User struct {
-	ID             int64
+	ID             uint32
 	name           string
 	follow_count   int64
 	follower_count int64
@@ -67,8 +70,28 @@ func (u *User) insertUser() error {
 	return err
 }
 
-func search(id int64) (c Comment, err error) {
-	c = Comment{}
-	err = pool.QueryRow("SELECT id, content, video_id FROM public.comment WHERE id=$1", 2).Scan(&c.ID, &c.content, &c.video_id)
+func searchComment(id uint32, token string) (c []*comment.Comment, err error) {
+	var rows *sql.Rows
+	var userId uint32
+	rows, err = pool.Query("SELECT id, content, create_date, user_id FROM public.comment WHERE id=$1", id)
+	for rows.Next() {
+		cmt := comment.Comment{}
+		err = rows.Scan(&cmt.Id, &cmt.Content, &cmt.CreateDate, &userId)
+		ctx := context.Background()
+		userResp, err := clientUser.GetInfo(ctx, &user.UserInfoRequest{UserId: userId, Token: token})
+		// todo 检查状态码
+		u := comment.User{
+			Id:            userId,
+			FollowCount:   userResp.FollowCount,
+			FollowerCount: userResp.FollowerCount,
+			Name:          userResp.Username,
+			IsFollow:      userResp.IsFollow,
+		}
+		cmt.User = &u
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		c = append(c, &cmt)
+	}
 	return
 }

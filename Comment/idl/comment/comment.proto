@@ -72,13 +72,13 @@ message CommentListResponse {
 
 message User {
     // 用户id
-    int64 id = 1;
+    uint32 id = 1;
     // 用户名称
     string name = 2;
     // 关注总数
-    int64 follow_count = 3;
+    uint32 follow_count = 3;
     // 粉丝总数
-    int64 follower_count = 4;
+    uint32 follower_count = 4;
     // true-已关注，false-未关注
     bool is_follow = 5;
   }
