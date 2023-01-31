@@ -1,86 +1,99 @@
-package model
+package comment
 
 import (
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
-	pb "github.com/xiwen1/mini-tiktok-comment/Comment/idl"
-	"github.com/xiwen1/mini-tiktok-comment/Comment/snowflake"
+	"database/sql"
+	_ "github.com/lib/pq"
+	_ "github.com/mbobakov/grpc-consul-resolver"
+	"github.com/xiwen1/mini-tiktok-comment/Comment/idl/comment"
 	"golang.org/x/net/context"
-	"sync"
+	"log"
+	"time"
 )
 
-type Comment struct {
-	ID         int64
-	user       pb.User
-	content    string
-	createDate string // 格式为 mm-dd
-}
-
 type CommentActionServer struct {
-	pb.UnimplementedCommentActionServer
-	mu sync.Mutex
+	comment.UnimplementedCommentActionServer
 }
 
 var (
-	db neo4j.DriverWithContext
-	sf *snowflake.Worker
+	//connStr = "postgres:RpB27iLmDV4z7ZU5tpkn0UPLQWTQx1zFGaUJixDZQhPght7WWLzfZ8PLhZjavGUZ@srv.paracraft.club:31294/nicognaw?sslmode=disable"
+	connStr = "postgres://root:zkw030813@127.0.0.1:5432/root?sslmode=disable"
+	pool    *sql.DB
 )
 
-func InitComment(uri, user, password, realm string, node int64) error {
-	if db != nil {
+func InitComment(node int64) error {
+	if pool != nil {
 		return nil
 	}
 	var err error
-	db, err = neo4j.NewDriverWithContext(
-		uri,
-		neo4j.BasicAuth(
-			user,
-			password,
-			realm,
-		),
-	)
+	pool, err = sql.Open("pq", connStr)
 	if err != nil {
-		return err
-	}
-
-	sf, err = snowflake.NewWorker(node)
-	if err != nil {
-		return err
+		log.Fatal("unable to use data source name", err)
+		return nil
 	}
 	return nil
-}
-
-func commentToMap(c *Comment) map[string]interface{} {
-	return map[string]interface{}{
-		"id":          c.ID,
-		"user":        c.user.Id,
-		"content":     c.content,
-		"create_date": c.createDate,
-	}
 }
 
 func CloseComment(ctx context.Context) error {
-	if db == nil {
+	if pool == nil {
 		return nil
 	}
-	err := db.Close(ctx)
+	err := pool.Close()
 	if err != nil {
 		return err
 	}
-	db = nil
+	pool = nil
 	return nil
 }
 
-func (CommentActionServer) CommentAction(ctx context.Context, req *pb.CommentActionRequest) *pb.CommentActionResponse {
-	token := req.Token
+func (CommentActionServer) CommentAction(ctx context.Context, request *comment.CommentActionRequest) (response *comment.CommentActionResponse, err error) {
+	//token := request.Token
 
 	// todo 检查token
-	actionType := req.ActionType
+	actionType := request.ActionType
 
-	session := db.NewSession(ctx, neo4j.SessionConfig{})
-	defer session.Close(ctx)
-
-	if actionType == pb.CommentActionRequest_PUBLISH {
-		id := sf.GetId()
-
+	if actionType == comment.CommentActionRequest_PUBLISH {
+		c := Comment{}
+		// todo 查询user信息
+		c.video_id = request.VideoId
+		c.content = request.CommentText
+		c.createDate = time.Now().Format("01-02")
+		err := c.insertComment()
+		if err != nil {
+			response.StatusCode = comment.CommentActionResponse_FAIL
+			response.StatusMsg = "unable to insert into database"
+			log.Fatal(err.Error())
+		}
+		cc := comment.Comment{}
+		response.Comment = &cc
+		response.StatusMsg = "success"
+		response.StatusCode = comment.CommentActionResponse_SUCCESS
+	} else {
+		err := delete(request.CommentId)
+		if err != nil {
+			response.StatusCode = comment.CommentActionResponse_FAIL
+			response.StatusMsg = "unable to delete from database"
+			log.Fatal(err.Error())
+		}
+		response.StatusMsg = "success"
+		response.StatusCode = comment.CommentActionResponse_SUCCESS
 	}
+	return
 }
+
+func (CommentActionServer) CommentList(ctx context.Context, request *comment.CommentListRequest) (response *comment.CommentActionResponse, err error) {
+	return
+}
+
+//func main() {
+//	var err error
+//	pool, err = sql.Open("postgres", connStr)
+//	if err != nil {
+//		log.Fatal(err.Error())
+//	}
+//	ctx := context.Background()
+//	err = pool.PingContext(ctx)
+//	if err != nil {
+//		log.Fatal(err.Error())
+//	}
+//	println("connected")
+//}
