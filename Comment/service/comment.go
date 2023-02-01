@@ -46,7 +46,7 @@ func InitComment() error {
 	return nil
 }
 
-func CloseComment(ctx context.Context) error {
+func CloseComment() error {
 	if pool == nil {
 		return nil
 	}
