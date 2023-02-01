@@ -21,28 +21,31 @@ var (
 	//connStr = "postgres:RpB27iLmDV4z7ZU5tpkn0UPLQWTQx1zFGaUJixDZQhPght7WWLzfZ8PLhZjavGUZ@srv.paracraft.club:31294/nicognaw?sslmode=disable"
 	connStr    = "postgres://root:zkw030813@127.0.0.1:5432/root?sslmode=disable"
 	pool       *sql.DB
-	consul     = "consul://"
-	conn       *grpc.ClientConn
+	consulUser = "consul://0.0.0.0:14514/bawling-minidouyin-user-grpc"
+	consulAuth = "consul://0.0.0.0:14514/bawling-minidouyin-auth-grpc"
+	connUser   *grpc.ClientConn
+	connAuth   *grpc.ClientConn
 	clientAuth auth.AuthServiceClient
 	clientUser user.UserServiceClient
 )
 
 func InitComment() error {
-	if pool != nil {
-		return nil
-	}
 	var err error
 	pool, err = sql.Open("pq", connStr)
 	if err != nil {
 		log.Fatal("unable to use data source name", err)
 		return nil
 	}
-	conn, err = grpc.Dial(consul, grpc.EmptyDialOption{})
-	clientAuth = auth.NewAuthServiceClient(conn)
-	clientUser = user.NewUserServiceClient(conn)
+	connUser, err = grpc.Dial(consulUser, grpc.EmptyDialOption{})
 	if err != nil {
 		log.Fatal(err.Error())
 	}
+	connAuth, err = grpc.Dial(consulAuth, grpc.EmptyDialOption{})
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	//clientAuth = auth.NewAuthServiceClient(connAuth)
+	//clientUser = user.NewUserServiceClient(connUser)
 	return nil
 }
 
@@ -55,7 +58,7 @@ func CloseComment() error {
 		return err
 	}
 	pool = nil
-	err = conn.Close()
+	err = connUser.Close()
 	if err != nil {
 		return err
 	}
@@ -64,6 +67,8 @@ func CloseComment() error {
 
 func (CommentActionServer) CommentAction(ctx context.Context, request *comment.CommentActionRequest) (response *comment.CommentActionResponse, err error) {
 	token := request.Token
+	clientAuth := auth.NewAuthServiceClient(connAuth)
+	clientUser := user.NewUserServiceClient(connUser)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	authResp, err := clientAuth.Auth(ctx, &auth.AuthRequest{Token: token})
@@ -127,6 +132,7 @@ func (CommentActionServer) CommentAction(ctx context.Context, request *comment.C
 
 func (CommentActionServer) CommentList(ctx context.Context, request *comment.CommentListRequest) (response *comment.CommentListResponse, err error) {
 	token := request.Token
+	clientAuth := auth.NewAuthServiceClient(connAuth)
 	authResp, err := clientAuth.Auth(ctx, &auth.AuthRequest{Token: token})
 	if authResp.StatusCode != auth.AuthResponse_SUCCESS {
 		response.StatusCode = comment.CommentListResponse_FAIL

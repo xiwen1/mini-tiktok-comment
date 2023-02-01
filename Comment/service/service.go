@@ -70,6 +70,7 @@ func (u *User) insertUser() error {
 	return err
 }
 
+// todo 测试searchComment
 func searchComment(id uint32, token string) (c []*comment.Comment, err error) {
 	var rows *sql.Rows
 	var userId uint32
@@ -78,8 +79,13 @@ func searchComment(id uint32, token string) (c []*comment.Comment, err error) {
 		cmt := comment.Comment{}
 		err = rows.Scan(&cmt.Id, &cmt.Content, &cmt.CreateDate, &userId)
 		ctx := context.Background()
+		clientUser := user.NewUserServiceClient(connUser)
 		userResp, err := clientUser.GetInfo(ctx, &user.UserInfoRequest{UserId: userId, Token: token})
 		// todo 检查状态码
+		if err != nil {
+			log.Fatal(err.Error())
+			return nil, err
+		}
 		u := comment.User{
 			Id:            userId,
 			FollowCount:   userResp.FollowCount,
@@ -88,9 +94,6 @@ func searchComment(id uint32, token string) (c []*comment.Comment, err error) {
 			IsFollow:      userResp.IsFollow,
 		}
 		cmt.User = &u
-		if err != nil {
-			log.Fatal(err.Error())
-		}
 		c = append(c, &cmt)
 	}
 	return
