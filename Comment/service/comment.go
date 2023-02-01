@@ -1,4 +1,4 @@
-package comment
+package Comment
 
 import (
 	"database/sql"
@@ -27,7 +27,7 @@ var (
 	clientUser user.UserServiceClient
 )
 
-func InitComment(node int64) error {
+func InitComment() error {
 	if pool != nil {
 		return nil
 	}
@@ -67,12 +67,27 @@ func (CommentActionServer) CommentAction(ctx context.Context, request *comment.C
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	authResp, err := clientAuth.Auth(ctx, &auth.AuthRequest{Token: token})
-	// todo 检查状态码
+	if authResp.StatusCode != auth.AuthResponse_SUCCESS {
+		response.StatusCode = comment.CommentActionResponse_FAIL
+		response.StatusMsg = "auth fail"
+		return
+	}
+
 	userId := authResp.UserId
 	actionType := request.ActionType
 
 	userResp, err := clientUser.GetInfo(ctx, &user.UserInfoRequest{UserId: userId, Token: token})
-	// todo 检查状态码
+	if userResp.StatusCode == user.UserInfoResponse_AUTH_FAIL {
+		response.StatusCode = comment.CommentActionResponse_FAIL
+		response.StatusMsg = "userinfo auth fail"
+		return
+	}
+	if userResp.StatusCode == user.UserInfoResponse_UNSPECIFIED {
+		response.StatusCode = comment.CommentActionResponse_FAIL
+		response.StatusMsg = "userid unspecified"
+		return
+	}
+
 	u := comment.User{
 		Id:            userId,
 		FollowCount:   userResp.FollowCount,
@@ -115,18 +130,20 @@ func (CommentActionServer) CommentList(ctx context.Context, request *comment.Com
 	authResp, err := clientAuth.Auth(ctx, &auth.AuthRequest{Token: token})
 	if authResp.StatusCode != auth.AuthResponse_SUCCESS {
 		response.StatusCode = comment.CommentListResponse_FAIL
+		response.StatusMsg = "unable to auth while commentList"
 		return
 	}
 	video_id := request.VideoId
 	c, err := searchComment(uint32(video_id), token)
 	if err != nil {
 		response.StatusCode = comment.CommentListResponse_FAIL
+		response.StatusMsg = "unable to search for comment"
 		log.Fatal(err.Error())
 		return
 	}
 	response.StatusMsg = "success"
 	response.StatusCode = comment.CommentListResponse_SUCCESS
 	response.CommentList = c
-	// todo 查询结果到comment结构体的map映射
+
 	return
 }
