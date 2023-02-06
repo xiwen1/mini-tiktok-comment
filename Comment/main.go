@@ -1,28 +1,26 @@
 package main
 
 import (
-	"github.com/xiwen1/mini-tiktok-comment/Comment/idl/comment"
+	"github.com/gin-gonic/gin"
+	"github.com/xiwen1/mini-tiktok-comment/Comment/controller"
 	"github.com/xiwen1/mini-tiktok-comment/Comment/service"
-	"google.golang.org/grpc"
 	"log"
-	"net"
 )
 
-var port = "50051"
+func initRouter(r *gin.Engine) {
+	apiRouter := r.Group("/douyin")
+	apiRouter.POST("/comment/action/", controller.CommentAction)
+	apiRouter.GET("/comment/list/", controller.CommentList)
+}
 
 func main() {
-	lis, err := net.Listen("tcp", "0.0.0.0:"+port)
+	err := service.InitComment()
 	if err != nil {
-		log.Fatalf("fail to listen: %v", err)
+		log.Println("init fail ")
+		return
 	}
-	err = Comment.InitComment()
-	if err != nil {
-		log.Println("unable to init comment service")
-	}
-	s := grpc.NewServer()
-	comment.RegisterCommentActionServer(s, &Comment.CommentActionServer{})
-	log.Printf("comment server listening at %v", lis.Addr())
-	if err := s.Serve(lis); err != nil {
-		log.Fatal(err.Error())
-	}
+	r := gin.Default()
+	initRouter(r)
+	r.Run("0.0.0.0:50051")
+
 }
